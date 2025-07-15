@@ -3,15 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
   Save,
-  RefreshCw, 
+  RefreshCw,
+  Calendar,
   Package, 
   DollarSign,
   Hash,
   Tag,
   FileText,
-  Calendar,
   AlertTriangle,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { Product, RegisterSale } from '../types';
 import { validateStockConfiguration, getDefaultInitialStockDate, formatStockDate } from '../utils/calculateStockFinal';
@@ -23,6 +24,7 @@ interface ProductEditModalProps {
   onSave: (productData: Partial<Product>) => Promise<void>;
   isLoading: boolean;
   allSales?: RegisterSale[]; // For validation warnings
+  onDeleteProduct?: (productId: string) => Promise<void>;
   stockConfig?: {[productId: string]: { initialStock: number, initialStockDate: string, minStock: number }};
 }
 
@@ -32,6 +34,7 @@ export function ProductEditModal({
   onClose, 
   onSave, 
   isLoading,
+  onDeleteProduct,
   allSales = [],
   stockConfig = {}
 }: ProductEditModalProps) {
@@ -47,6 +50,8 @@ export function ProductEditModal({
 
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [warnings, setWarnings] = useState<any[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Reset form when product changes
   useEffect(() => {
@@ -135,6 +140,20 @@ export function ProductEditModal({
     };
     
     await onSave(productData);
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!product || !onDeleteProduct) return;
+    
+    setIsDeleting(true);
+    try {
+      await onDeleteProduct(product.id);
+      onClose();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -364,7 +383,7 @@ export function ProductEditModal({
                 <div>
                   <label className="block text-sm font-medium text-gray-400 mb-2">
                     <Calendar className="w-4 h-4 inline mr-2" />
-                    Date d'Effet
+                    Date d'Effet du Stock
                   </label>
                   <input
                     type="date"
@@ -374,12 +393,14 @@ export function ProductEditModal({
                                focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                                  errors.initialStockDate ? 'border-red-500' : 'border-gray-600'
                                }`}
+                    min="2020-01-01"
+                    max="2030-12-31"
                   />
                   {errors.initialStockDate && (
                     <p className="text-red-400 text-sm mt-1">{errors.initialStockDate}</p>
                   )}
                   <p className="text-gray-500 text-xs mt-1">
-                    Les ventes antérieures à cette date seront ignorées
+                    Les ventes antérieures à cette date seront ignorées dans le calcul du stock
                   </p>
                 </div>
               </div>
@@ -422,6 +443,22 @@ export function ProductEditModal({
             </div>
           </div>
 
+          {/* Delete Product Option (Edit mode only) */}
+          {isEditMode && onDeleteProduct && (
+            <div className="mt-6">
+              <div className="border-t border-gray-700 pt-6">
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center justify-center space-x-2 bg-red-500/20 text-red-400 
+                             py-3 px-4 rounded-xl hover:bg-red-500/30 transition-all duration-200"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  <span>Supprimer ce produit</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex space-x-3 mt-8">
             <button
@@ -457,6 +494,78 @@ export function ProductEditModal({
           </div>
         </motion.div>
       </motion.div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-md"
+            >
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Confirmer la suppression</h3>
+                  <p className="text-gray-400 text-sm">Cette action est irréversible</p>
+                </div>
+              </div>
+
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
+                <h4 className="text-red-400 font-semibold mb-2">Attention :</h4>
+                <div className="text-gray-300 text-sm space-y-1">
+                  <div>• La suppression de <strong>{product?.name}</strong> est définitive</div>
+                  <div>• Toutes les ventes associées à ce produit seront affectées</div>
+                  <div>• Les statistiques et l'historique seront impactés</div>
+                  <div>• Les données supprimées ne peuvent pas être restaurées automatiquement</div>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleDeleteProduct}
+                  disabled={isDeleting}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white font-semibold 
+                             py-3 px-4 rounded-xl hover:from-red-600 hover:to-red-700 
+                             disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200 flex items-center justify-center space-x-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Suppression...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Confirmer la suppression</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-xl 
+                             hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200"
+                >
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </AnimatePresence>
   );
 }
