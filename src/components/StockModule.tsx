@@ -106,6 +106,8 @@ export default function StockModule({
     message?: string;
   }>({ syncing: false });
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(viewState.selectedItems || new Set());
+  const [currentPage, setCurrentPage] = useState(viewState.currentPage || 1);
+  const [itemsPerPage, setItemsPerPage] = useState(viewState.itemsPerPage || 20);
 
   // Sync state changes back to viewState
   useEffect(() => {
@@ -114,9 +116,11 @@ export default function StockModule({
       dateRange: filters.dateRange,
       sortField: filters.sortField,
       sortDirection: filters.sortDirection,
-      showFilters: showFilters
+      showFilters: showFilters,
+      currentPage: currentPage,
+      itemsPerPage: itemsPerPage
     });
-  }, [filters.searchTerm, filters.dateRange, filters.sortField, filters.sortDirection, showFilters, updateState]);
+  }, [filters.searchTerm, filters.dateRange, filters.sortField, filters.sortDirection, showFilters, currentPage, itemsPerPage, updateState]);
 
   useEffect(() => {
     updateFilters({
@@ -248,6 +252,12 @@ export default function StockModule({
 
     return filtered;
   }, [products, registerSales, filters]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
 
   // Calculate statistics
   const statistics = useMemo(() => {
@@ -386,8 +396,9 @@ export default function StockModule({
     setFilters(prev => ({
       ...prev,
       sortField: field,
-      sortDirection: prev.sortField === field && prev.sortDirection === 'asc' ? 'desc' : 'asc'
+      sortDirection: prev.sortField === field && prev.sortDirection === 'asc' ? 'desc' : 'asc',
     }));
+    setCurrentPage(1); // Reset to first page when sorting changes
   };
 
   const handleEditProduct = (product: Product) => {
@@ -871,6 +882,91 @@ export default function StockModule({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Pagination Controls */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl p-4"
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
+            <div className="flex items-center space-x-4">
+              <span className="text-slate-400 text-sm">Affichage par page:</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1); // Reset to first page when changing items per page
+                }}
+                className="px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm
+                           focus:outline-none focus:border-blue-500"
+              >
+                <option value={20}>20</option>
+                <option value={30}>30</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-slate-400 text-sm">
+                {startIndex + 1}-{Math.min(endIndex, filteredProducts.length)} sur {filteredProducts.length}
+              </span>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 
+                             disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
+
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          currentPage === pageNum
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 
+                             disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
+        </motion.div>
       </motion.div>}
 
       {/* Products Table */}
@@ -890,7 +986,7 @@ export default function StockModule({
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto mb-4">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700">
@@ -922,7 +1018,7 @@ export default function StockModule({
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((product, index) => {
+              {paginatedProducts.map((product, index) => {
                 const status = getStockStatus(product);
                 
                 return (

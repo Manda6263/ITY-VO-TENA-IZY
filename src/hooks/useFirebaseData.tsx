@@ -450,8 +450,26 @@ export function useFirebaseData() {
   // Update product
   const updateProduct = async (id: string, updates: Partial<Product>) => {
     try {
+      console.log('Updating product:', id, updates);
       const productRef = doc(db, 'products', id);
-      await updateDoc(productRef, updates);
+      
+      // Get current product data
+      const productDoc = await getDoc(productRef);
+      if (!productDoc.exists()) {
+        throw new Error('Product not found');
+      }
+      
+      // Merge with updates
+      const updatedProduct = {
+        ...productDoc.data(),
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Save to Firestore
+      await updateDoc(productRef, updatedProduct);
+      console.log('Product updated successfully');
+      
       await loadProducts();
     } catch (error) {
       console.error('Error updating product:', error);
@@ -462,7 +480,31 @@ export function useFirebaseData() {
   // Delete product
   const deleteProduct = async (id: string) => {
     try {
+      console.log('Deleting product:', id);
+      
+      // Get product data before deletion (for logging)
+      const productRef = doc(db, 'products', id);
+      const productDoc = await getDoc(productRef);
+      if (!productDoc.exists()) {
+        throw new Error('Product not found');
+      }
+      
+      const productData = productDoc.data();
+      console.log('Product to delete:', productData);
+      
+      // Create a deletion log
+      await addDoc(collection(db, 'product_deletions'), {
+        productId: id,
+        productName: productData.name,
+        productCategory: productData.category,
+        deletedAt: new Date().toISOString(),
+        productData: productData
+      });
+      
+      // Delete the product
       await deleteDoc(doc(db, 'products', id));
+      console.log('Product deleted successfully');
+      
       await loadProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
@@ -555,6 +597,7 @@ export function useFirebaseData() {
   // Update stock configuration
   const updateStockConfig = async (productId: string, config: { initialStock: number, initialStockDate: string, minStock: number }) => {
     try {
+      console.log('Updating stock configuration:', productId, config);
       // Get the product document
       const productRef = doc(db, 'products', productId);
       const productDoc = await getDoc(productRef);
@@ -581,18 +624,21 @@ export function useFirebaseData() {
         const stock = Math.max(0, config.initialStock - quantitySold);
         
         // Update product with new configuration
-        const updatedProduct = {
+        const updatedProduct: Partial<Product> & { updatedAt: string } = {
           ...productData,
           initialStock: config.initialStock,
           initialStockDate: config.initialStockDate,
           minStock: config.minStock,
           quantitySold,
           stock,
-          stockValue: stock * productData.price,
-          isConfigured: true
+          stockValue: Math.round((stock * productData.price) * 100) / 100, // Round to 2 decimal places
+          isConfigured: true,
+          updatedAt: new Date().toISOString()
         };
         
-        await setDoc(productRef, updatedProduct);
+        await updateDoc(productRef, updatedProduct);
+        console.log('Stock configuration updated successfully');
+        
         await loadProducts();
       }
     } catch (error) {
@@ -670,4 +716,3 @@ export function useFirebaseData() {
     updateStockConfig,
     categorizeSales
   };
-}

@@ -12,7 +12,8 @@ import {
   FileText,
   AlertTriangle,
   Info,
-  Trash2
+  Trash2,
+  CheckCircle
 } from 'lucide-react';
 import { Product, RegisterSale } from '../types';
 import { validateStockConfiguration, getDefaultInitialStockDate, formatStockDate } from '../utils/calculateStockFinal';
@@ -52,6 +53,7 @@ export function ProductEditModal({
   const [warnings, setWarnings] = useState<any[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Reset form when product changes
   useEffect(() => {
@@ -80,6 +82,16 @@ export function ProductEditModal({
     setErrors({});
     setWarnings([]);
   }, [product, isOpen]);
+  
+  // Clear success message after 3 seconds
+  useEffect(() => {
+    if (saveSuccess) {
+      const timer = setTimeout(() => {
+        setSaveSuccess(false);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveSuccess]);
 
   // Validate stock configuration when relevant fields change
   useEffect(() => {
@@ -133,13 +145,22 @@ export function ProductEditModal({
     if (!validateForm()) return;
 
     // Only update stock configuration, not the product itself
-    const productData: Partial<Product> = {
-      initialStock: parseInt(formData.initialStock),
-      initialStockDate: formData.initialStockDate,
-      minStock: parseInt(formData.minStock)
-    };
-    
-    await onSave(productData);
+    try {
+      setIsUpdating(true);
+      const productData: Partial<Product> = {
+        initialStock: parseInt(formData.initialStock),
+        initialStockDate: formData.initialStockDate,
+        minStock: parseInt(formData.minStock),
+        isConfigured: true // Mark as configured when saved
+      };
+      
+      await onSave(productData);
+      setSaveSuccess(true);
+    } catch (error) {
+      console.error('Error saving product:', error);
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   const handleDeleteProduct = async () => {
@@ -206,6 +227,21 @@ export function ProductEditModal({
               <X className="w-6 h-6" />
             </button>
           </div>
+
+          {/* Success Message */}
+          <AnimatePresence>
+            {saveSuccess && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="bg-green-500/20 border border-green-500/30 rounded-xl p-4 mb-6 flex items-center space-x-3"
+              >
+                <CheckCircle className="w-5 h-5 text-green-400" />
+                <span className="text-green-400">Configuration du stock sauvegardée avec succès</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Stock Configuration Info */}
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-6">
@@ -384,6 +420,7 @@ export function ProductEditModal({
                   <label className="block text-sm font-medium text-gray-400 mb-2">
                     <Calendar className="w-4 h-4 inline mr-2" />
                     Date d'Effet du Stock
+                    <span className="text-xs text-gray-500 ml-2">(Les ventes antérieures seront ignorées)</span>
                   </label>
                   <input
                     type="date"
@@ -393,14 +430,14 @@ export function ProductEditModal({
                                focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                                  errors.initialStockDate ? 'border-red-500' : 'border-gray-600'
                                }`}
-                    min="2020-01-01"
-                    max="2030-12-31"
+                    min="2020-01-01" 
+                    max={format(new Date(new Date().setFullYear(new Date().getFullYear() + 1)), 'yyyy-MM-dd')}
                   />
                   {errors.initialStockDate && (
                     <p className="text-red-400 text-sm mt-1">{errors.initialStockDate}</p>
                   )}
                   <p className="text-gray-500 text-xs mt-1">
-                    Les ventes antérieures à cette date seront ignorées dans le calcul du stock
+                    Date à partir de laquelle les ventes affectent le stock
                   </p>
                 </div>
               </div>
@@ -463,16 +500,21 @@ export function ProductEditModal({
           <div className="flex space-x-3 mt-8">
             <button
               onClick={handleSave}
-              disabled={isLoading}
+              disabled={isLoading || isUpdating || saveSuccess}
               className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold 
                          py-3 px-4 rounded-xl hover:from-blue-600 hover:to-blue-700 
                          disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-200 flex items-center justify-center space-x-2"
             >
-              {isLoading ? (
+              {isLoading || isUpdating ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
                   <span>Sauvegarde...</span>
+                </>
+              ) : saveSuccess ? (
+                <>
+                  <CheckCircle className="w-5 h-5" />
+                  <span>Sauvegardé</span>
                 </>
               ) : (
                 <>
@@ -484,7 +526,7 @@ export function ProductEditModal({
             
             <button
               onClick={onClose}
-              disabled={isLoading}
+              disabled={isLoading || isUpdating}
               className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-xl 
                          hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-200"
@@ -523,10 +565,13 @@ export function ProductEditModal({
               <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
                 <h4 className="text-red-400 font-semibold mb-2">Attention :</h4>
                 <div className="text-gray-300 text-sm space-y-1">
-                  <div>• La suppression de <strong>{product?.name}</strong> est définitive</div>
-                  <div>• Toutes les ventes associées à ce produit seront affectées</div>
-                  <div>• Les statistiques et l'historique seront impactés</div>
-                  <div>• Les données supprimées ne peuvent pas être restaurées automatiquement</div>
+                  <div>• La suppression de <strong>{product?.name}</strong> est définitive et irréversible</div>
+                  <div>• Toutes les ventes associées à ce produit resteront dans l'historique mais seront orphelines</div>
+                  <div>• Les statistiques, rapports et analyses seront impactés</div>
+                  <div>• Cette action ne peut pas être annulée</div>
+                  <div className="mt-2 pt-2 border-t border-red-500/20 text-red-300 font-medium">
+                    Êtes-vous absolument sûr de vouloir supprimer ce produit ?
+                  </div>
                 </div>
               </div>
 
