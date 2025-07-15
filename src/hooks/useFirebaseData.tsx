@@ -597,7 +597,7 @@ export function useFirebaseData() {
   // Update stock configuration
   const updateStockConfig = async (productId: string, config: { initialStock: number, initialStockDate: string, minStock: number }) => {
     try {
-      console.log('Updating stock configuration:', productId, config);
+      console.log('Updating stock configuration with effective date:', productId, config);
       // Get the product document
       const productRef = doc(db, 'products', productId);
       const productDoc = await getDoc(productRef);
@@ -605,11 +605,12 @@ export function useFirebaseData() {
       if (productDoc.exists()) {
         const productData = productDoc.data() as Product;
         
-        // Get all sales for this product to calculate accurate stock
+        // Get all sales for this product AFTER the effective date to calculate accurate stock
         const salesQuery = query(
           collection(db, 'register_sales'),
           where('product', '==', productData.name),
-          where('category', '==', productData.category)
+          where('category', '==', productData.category),
+          where('date', '>=', new Date(config.initialStockDate))
         );
         const salesSnapshot = await getDocs(salesQuery);
         
@@ -625,7 +626,6 @@ export function useFirebaseData() {
         
         // Update product with new configuration
         const updatedProduct: Partial<Product> & { updatedAt: string } = {
-          ...productData,
           initialStock: config.initialStock,
           initialStockDate: config.initialStockDate,
           minStock: config.minStock,
@@ -640,7 +640,9 @@ export function useFirebaseData() {
         console.log('Stock configuration updated successfully');
         
         await loadProducts();
+        return true;
       }
+      return false;
     } catch (error) {
       console.error('Error updating stock config:', error);
       throw error;
@@ -714,6 +716,7 @@ export function useFirebaseData() {
     refreshData,
     autoSyncProductsFromSales,
     updateStockConfig,
-    categorizeSales
+    categorizeSales,
+    deleteSelectedProducts: deleteProducts
   };
 }
