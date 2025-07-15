@@ -147,7 +147,6 @@ export function ProductEditModal({
 
     // Only update stock configuration, not the product itself
     try {
-      setIsUpdating(true);
       const productData: Partial<Product> = {
         initialStock: parseInt(formData.initialStock),
         initialStockDate: formData.initialStockDate,
@@ -159,8 +158,6 @@ export function ProductEditModal({
       setSaveSuccess(true);
     } catch (error) {
       console.error('Error saving product:', error);
-    } finally {
-      setIsUpdating(false);
     }
   };
 
@@ -501,13 +498,13 @@ export function ProductEditModal({
           <div className="flex space-x-3 mt-8">
             <button
               onClick={handleSave}
-              disabled={isLoading || isUpdating || saveSuccess}
+              disabled={isLoading || saveSuccess}
               className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold 
                          py-3 px-4 rounded-xl hover:from-blue-600 hover:to-blue-700 
                          disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-200 flex items-center justify-center space-x-2"
             >
-              {isLoading || isUpdating ? (
+              {isLoading ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
                   <span>Sauvegarde...</span>
@@ -527,7 +524,7 @@ export function ProductEditModal({
             
             <button
               onClick={onClose}
-              disabled={isLoading || isUpdating}
+              disabled={isLoading}
               className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-xl 
                          hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-200"
