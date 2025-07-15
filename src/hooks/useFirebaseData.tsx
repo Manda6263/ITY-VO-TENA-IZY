@@ -716,3 +716,4 @@ export function useFirebaseData() {
     updateStockConfig,
     categorizeSales
   };
+}
