@@ -251,15 +251,29 @@ export default function StockModule({
 
   // Calculate statistics
   const statistics = useMemo(() => {
-    // Start with filtered products based on search term
-    let relevantProducts = products.filter(product =>
-      !filters.searchTerm || 
-      product.name.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
-      product.category.toLowerCase().includes(filters.searchTerm.toLowerCase())
-    );
+    // Start with all products
+    let relevantProducts = products;
+    
+    // Apply search term filter
+    if (filters.searchTerm) {
+      relevantProducts = relevantProducts.filter(product =>
+        product.name.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        product.category.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        (product.description && product.description.toLowerCase().includes(filters.searchTerm.toLowerCase()))
+      );
+    }
     
     // Filter sales based on current filters
     let filteredSales = registerSales;
+    
+    // Apply search term filter to sales as well
+    if (filters.searchTerm) {
+      filteredSales = filteredSales.filter(sale =>
+        sale.product.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        sale.category.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        sale.seller.toLowerCase().includes(filters.searchTerm.toLowerCase())
+      );
+    }
     
     // Apply date range filter
     if (filters.dateRange.start || filters.dateRange.end) {
@@ -330,11 +344,18 @@ export default function StockModule({
     const totalStockValue = relevantProducts.reduce((sum, p) => sum + (p.stockValue || 0), 0);
     const totalQuantitySold = filteredSales.reduce((sum, sale) => sum + sale.quantity, 0);
 
+    // Calculate percentage of products with issues
+    const totalProducts = relevantProducts.length;
+    const lowStockPercentage = totalProducts > 0 ? (lowStockProducts / totalProducts) * 100 : 0;
+    const outOfStockPercentage = totalProducts > 0 ? (outOfStockProducts / totalProducts) * 100 : 0;
+
     return {
       configuredProducts,
       inStockProducts,
       lowStockProducts,
       outOfStockProducts,
+      lowStockPercentage,
+      outOfStockPercentage,
       totalStockValue,
       totalQuantitySold,
       totalRevenue
@@ -645,8 +666,12 @@ export default function StockModule({
           <div className="flex items-center space-x-3">
             <AlertTriangle className="w-6 h-6 text-orange-400" />
             <div>
-              <p className="text-slate-400 text-sm">Stock Faible</p>
-              <p className="text-2xl font-bold text-white">{statistics.lowStockProducts}</p>
+              <p className="text-slate-400 text-sm">Stock Faible {statistics.lowStockPercentage > 0 && (
+                <span className="text-xs">({statistics.lowStockPercentage.toFixed(1)}%)</span>
+              )}</p>
+              <p className="text-2xl font-bold text-white">
+                {statistics.lowStockProducts}
+              </p>
             </div>
           </div>
         </motion.div>
@@ -661,8 +686,12 @@ export default function StockModule({
           <div className="flex items-center space-x-3">
             <X className="w-6 h-6 text-red-400" />
             <div>
-              <p className="text-slate-400 text-sm">Rupture</p>
-              <p className="text-2xl font-bold text-white">{statistics.outOfStockProducts}</p>
+              <p className="text-slate-400 text-sm">Rupture {statistics.outOfStockPercentage > 0 && (
+                <span className="text-xs">({statistics.outOfStockPercentage.toFixed(1)}%)</span>
+              )}</p>
+              <p className="text-2xl font-bold text-white">
+                {statistics.outOfStockProducts}
+              </p>
             </div>
           </div>
         </motion.div>
@@ -851,8 +880,14 @@ export default function StockModule({
         className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl p-6">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-lg font-semibold text-white">
-            Produits ({filteredProducts.length})
+            Produits ({filteredProducts.length}{products.length !== filteredProducts.length ? ` sur ${products.length}` : ''})
           </h3>
+          {hasActiveFilters && (
+            <div className="flex items-center space-x-2 text-sm text-slate-400 bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">
+              <Filter className="w-4 h-4 text-blue-400" />
+              <span>Filtres actifs</span>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -907,6 +942,11 @@ export default function StockModule({
                     <td className="py-3 px-4 text-slate-300">{formatCurrency(product.price)}</td>
                     <td className="py-3 px-4 text-center text-white font-medium">
                       {product.initialStock || 0}
+                      {product.initialStockDate && (
+                        <span className="block text-xs text-slate-400">
+                          {format(new Date(product.initialStockDate), 'dd/MM/yyyy')}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-center text-blue-400 font-medium">
                       {product.quantitySold || 0}
