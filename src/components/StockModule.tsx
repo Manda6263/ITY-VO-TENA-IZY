@@ -30,6 +30,7 @@ import { Product, RegisterSale } from '../types';
 import { format, startOfDay, endOfDay, subDays, isAfter, isBefore } from 'date-fns';
 import { exportToExcel } from '../utils/excelUtils';
 import { ProductEditModal } from './ProductEditModal';
+import { useViewState, useScrollPosition } from '../hooks/useViewState';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface StockModuleProps {
@@ -77,30 +78,64 @@ export default function StockModule({
   stockConfig = {}
 }: StockModuleProps) {
   const { t } = useLanguage();
+  const { viewState, updateState, updateFilters, updateSelectedItems } = useViewState('stock');
+  useScrollPosition('stock');
   
+  // Initialize state from viewState with stable defaults
   const [filters, setFilters] = useState<SmartFilters>({
-    searchTerm: '',
-    dateRange: {
+    searchTerm: viewState.searchTerm || '',
+    dateRange: viewState.dateRange || {
       start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
       end: format(new Date(), 'yyyy-MM-dd')
     },
-    register: 'all',
-    category: 'all',
-    seller: 'all',
-    stockStatus: 'all',
-    sortField: 'name',
-    sortDirection: 'asc'
+    register: viewState.filters?.register || 'all',
+    category: viewState.filters?.category || 'all',
+    seller: viewState.filters?.seller || 'all',
+    stockStatus: viewState.filters?.stockStatus || 'all',
+    sortField: viewState.sortField as keyof Product || 'name',
+    sortDirection: viewState.sortDirection || 'asc'
   });
 
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(viewState.modals?.editModal || false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(viewState.showFilters || false);
   const [syncStatus, setSyncStatus] = useState<{
     syncing: boolean;
     success?: boolean;
     message?: string;
   }>({ syncing: false });
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(viewState.selectedItems || new Set());
+
+  // Sync state changes back to viewState
+  useEffect(() => {
+    updateState({
+      searchTerm: filters.searchTerm,
+      dateRange: filters.dateRange,
+      sortField: filters.sortField,
+      sortDirection: filters.sortDirection,
+      showFilters: showFilters
+    });
+  }, [filters.searchTerm, filters.dateRange, filters.sortField, filters.sortDirection, showFilters, updateState]);
+
+  useEffect(() => {
+    updateFilters({
+      register: filters.register,
+      category: filters.category,
+      seller: filters.seller,
+      stockStatus: filters.stockStatus
+    });
+  }, [filters.register, filters.category, filters.seller, filters.stockStatus, updateFilters]);
+
+  useEffect(() => {
+    updateState({
+      modals: { editModal: showEditModal }
+    });
+  }, [showEditModal, updateState]);
+
+  useEffect(() => {
+    updateSelectedItems(selectedProducts);
+  }, [selectedProducts, updateSelectedItems]);
 
   // Get unique values for filter dropdowns
   const uniqueRegisters = useMemo(() => 
@@ -337,6 +372,12 @@ export default function StockModule({
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     setShowEditModal(true);
+    // Add the product to selected products
+    setSelectedProducts(prev => {
+      const newSet = new Set(prev);
+      newSet.add(product.id);
+      return newSet;
+    });
   };
 
   const handleSaveProduct = async (productData: Partial<Product>) => {
