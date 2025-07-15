@@ -372,12 +372,6 @@ export default function StockModule({
   const handleEditProduct = (product: Product) => {
     setEditingProduct(product);
     setShowEditModal(true);
-    // Add the product to selected products
-    setSelectedProducts(prev => {
-      const newSet = new Set(prev);
-      newSet.add(product.id);
-      return newSet;
-    });
   };
 
   const handleSaveProduct = async (productData: Partial<Product>) => {
@@ -398,6 +392,16 @@ export default function StockModule({
       console.error('Error updating product:', error);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      await onDeleteProduct(productId);
+      // Refresh data after deletion
+      onRefreshData();
+    } catch (error) {
+      console.error('Error deleting product:', error);
     }
   };
 
@@ -931,10 +935,21 @@ export default function StockModule({
                         <button 
                           onClick={() => handleEditProduct(product)}
                           className="p-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 
-                                     transition-all duration-200"
+                                     transition-all duration-200 mr-2"
                           title="Configurer le stock"
                         >
                           <Settings className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setEditingProduct(product);
+                            setShowEditModal(true);
+                          }}
+                          className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 
+                                     transition-all duration-200"
+                          title="Supprimer le produit"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -964,9 +979,11 @@ export default function StockModule({
           onClose={() => {
             setShowEditModal(false);
             setEditingProduct(null);
+            setSelectedProducts(new Set());
           }}
           onSave={handleSaveProduct}
           isLoading={isUpdating}
+          onDeleteProduct={handleDeleteProduct}
           allSales={registerSales}
           stockConfig={stockConfig}
         />
