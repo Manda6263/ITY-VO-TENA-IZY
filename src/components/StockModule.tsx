@@ -24,7 +24,9 @@ import {
   EyeOff,
   Info,
   Zap,
-  AlertCircle
+  AlertCircle,
+  Square,
+  CheckSquare
 } from 'lucide-react';
 import { Product, RegisterSale } from '../types';
 import { format, startOfDay, endOfDay, subDays, isAfter, isBefore } from 'date-fns';
@@ -108,6 +110,8 @@ export default function StockModule({
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(viewState.selectedItems || new Set());
   const [currentPage, setCurrentPage] = useState(viewState.currentPage || 1);
   const [itemsPerPage, setItemsPerPage] = useState(viewState.itemsPerPage || 20);
+  const [showDeleteMultipleModal, setShowDeleteMultipleModal] = useState(false);
+  const [isMultiDeleting, setIsMultiDeleting] = useState(false);
 
   // Sync state changes back to viewState
   useEffect(() => {
@@ -409,19 +413,23 @@ export default function StockModule({
   const handleSaveProduct = async (productData: Partial<Product>) => {
     if (!editingProduct || !updateStockConfig) return;
 
-    setIsUpdating(true);
+    setIsUpdating(true); 
     try {
-      await updateStockConfig(editingProduct.id, {
+      const success = await updateStockConfig(editingProduct.id, {
         initialStock: productData.initialStock || 0,
         initialStockDate: productData.initialStockDate || format(new Date(), 'yyyy-MM-dd'),
         minStock: productData.minStock || 5
       });
       
-      setShowEditModal(false);
-      setEditingProduct(null);
-      onRefreshData();
+      if (success) {
+        // Modal will close automatically after success message
+        onRefreshData();
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Error updating product:', error);
+      return false;
     } finally {
       setIsUpdating(false);
     }
@@ -435,6 +443,43 @@ export default function StockModule({
     } catch (error) {
       console.error('Error deleting product:', error);
     }
+  };
+
+  // Handle multiple product deletion
+  const handleMultipleDelete = async () => {
+    if (selectedProducts.size === 0) return;
+    
+    setIsMultiDeleting(true);
+    try {
+      await onDeleteProducts(Array.from(selectedProducts));
+      setSelectedProducts(new Set());
+      setShowDeleteMultipleModal(false);
+      onRefreshData();
+    } catch (error) {
+      console.error('Error deleting multiple products:', error);
+    } finally {
+      setIsMultiDeleting(false);
+    }
+  };
+
+  // Toggle select all products on current page
+  const toggleSelectAll = () => {
+    if (selectedProducts.size === paginatedProducts.length) {
+      setSelectedProducts(new Set());
+    } else {
+      setSelectedProducts(new Set(paginatedProducts.map(p => p.id)));
+    }
+  };
+
+  // Toggle select single product
+  const toggleSelectProduct = (productId: string) => {
+    const newSelected = new Set(selectedProducts);
+    if (newSelected.has(productId)) {
+      newSelected.delete(productId);
+    } else {
+      newSelected.add(productId);
+    }
+    setSelectedProducts(newSelected);
   };
 
   const handleSyncProducts = async () => {
@@ -969,6 +1014,44 @@ export default function StockModule({
         </motion.div>
       </motion.div>}
 
+      {/* Multiple Selection Actions */}
+      {selectedProducts.size > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-xl 
+                     border border-blue-500/30 rounded-2xl p-4 mb-4"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <CheckSquare className="w-5 h-5 text-blue-400" />
+              <span className="text-white font-medium">
+                {selectedProducts.size} produit(s) sélectionné(s)
+              </span>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowDeleteMultipleModal(true)}
+                className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg hover:bg-red-500/30 
+                           transition-all duration-200 flex items-center space-x-2 text-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Supprimer la sélection</span>
+              </button>
+              
+              <button
+                onClick={() => setSelectedProducts(new Set())}
+                className="bg-gray-500/20 text-gray-400 px-4 py-2 rounded-lg hover:bg-gray-500/30 
+                           transition-all duration-200 text-sm"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Products Table */}
       {products.length > 0 && <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -990,6 +1073,18 @@ export default function StockModule({
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700">
+                <th className="py-3 px-2 text-slate-400">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="text-slate-400 hover:text-white transition-colors duration-200"
+                  >
+                    {selectedProducts.size === paginatedProducts.length && paginatedProducts.length > 0 ? (
+                      <CheckSquare className="w-5 h-5" />
+                    ) : (
+                      <Square className="w-5 h-5" />
+                    )}
+                  </button>
+                </th>
                 {[
                   { key: 'name', label: 'Produit' },
                   { key: 'category', label: 'Catégorie' },
@@ -1027,8 +1122,22 @@ export default function StockModule({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: index * 0.01 }}
-                    className="border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors duration-200"
+                    className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors duration-200 ${
+                      selectedProducts.has(product.id) ? 'bg-blue-500/10' : ''
+                    }`}
                   >
+                    <td className="py-3 px-2">
+                      <button
+                        onClick={() => toggleSelectProduct(product.id)}
+                        className="text-slate-400 hover:text-white transition-colors duration-200"
+                      >
+                        {selectedProducts.has(product.id) ? (
+                          <CheckSquare className="w-5 h-5 text-blue-400" />
+                        ) : (
+                          <Square className="w-5 h-5" />
+                        )}
+                      </button>
+                    </td>
                     <td className="py-3 px-4 text-white font-medium">{product.name}</td>
                     <td className="py-3 px-4">
                       <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs font-medium">
@@ -1122,8 +1231,84 @@ export default function StockModule({
           onDeleteProduct={handleDeleteProduct}
           allSales={registerSales}
           stockConfig={stockConfig}
+          onSave={handleSaveProduct}
         />
       )}
+
+      {/* Multiple Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteMultipleModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[60] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-lg"
+            >
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Confirmer la suppression multiple</h3>
+                  <p className="text-gray-400 text-sm">Cette action est irréversible</p>
+                </div>
+              </div>
+
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
+                <h4 className="text-red-400 font-semibold mb-2">Attention :</h4>
+                <div className="text-gray-300 text-sm space-y-1">
+                  <div>• Vous êtes sur le point de supprimer <strong>{selectedProducts.size} produits</strong></div>
+                  <div>• La suppression est définitive et irréversible</div>
+                  <div>• Toutes les ventes associées à ces produits resteront dans l'historique mais seront orphelines</div>
+                  <div>• Les statistiques, rapports et analyses seront impactés</div>
+                  <div className="mt-2 pt-2 border-t border-red-500/20 text-red-300 font-medium">
+                    Êtes-vous absolument sûr de vouloir supprimer ces produits ?
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={handleMultipleDelete}
+                  disabled={isMultiDeleting}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white font-semibold 
+                             py-3 px-4 rounded-xl hover:from-red-600 hover:to-red-700 
+                             disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200 flex items-center justify-center space-x-2"
+                >
+                  {isMultiDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Suppression...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Confirmer la suppression</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowDeleteMultipleModal(false)}
+                  disabled={isMultiDeleting}
+                  className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-xl 
+                             hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200"
+                >
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
