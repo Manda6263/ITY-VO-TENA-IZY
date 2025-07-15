@@ -145,7 +145,6 @@ export function ProductEditModal({
   const handleSave = async () => {
     if (!validateForm()) return;
 
-    // Only update stock configuration, not the product itself
     try {
       const productData: Partial<Product> = {
         initialStock: parseInt(formData.initialStock),
@@ -154,8 +153,14 @@ export function ProductEditModal({
         isConfigured: true // Mark as configured when saved
       };
       
-      await onSave(productData);
-      setSaveSuccess(true);
+      const success = await onSave(productData);
+      if (success) {
+        setSaveSuccess(true);
+        // Show success message for 3 seconds then close modal
+        setTimeout(() => {
+          onClose();
+        }, 3000);
+      }
     } catch (error) {
       console.error('Error saving product:', error);
     }
@@ -418,7 +423,7 @@ export function ProductEditModal({
                   <label className="block text-sm font-medium text-gray-400 mb-2">
                     <Calendar className="w-4 h-4 inline mr-2" />
                     Date d'Effet du Stock
-                    <span className="text-xs text-gray-500 ml-2">(Les ventes antérieures seront ignorées)</span>
+                    <span className="text-xs text-gray-500 ml-2">(Les ventes antérieures à cette date seront ignorées)</span>
                   </label>
                   <input
                     type="date"
@@ -429,13 +434,13 @@ export function ProductEditModal({
                                  errors.initialStockDate ? 'border-red-500' : 'border-gray-600'
                                }`}
                     min="2020-01-01" 
-                    max={format(new Date(new Date().setFullYear(new Date().getFullYear() + 1)), 'yyyy-MM-dd')}
+                    max={format(new Date(new Date().setFullYear(new Date().getFullYear() + 5)), 'yyyy-MM-dd')}
                   />
                   {errors.initialStockDate && (
                     <p className="text-red-400 text-sm mt-1">{errors.initialStockDate}</p>
                   )}
                   <p className="text-gray-500 text-xs mt-1">
-                    Date à partir de laquelle les ventes affectent le stock
+                    Les ventes à partir de cette date seront déduites du stock initial pour calculer le stock actuel
                   </p>
                 </div>
               </div>
