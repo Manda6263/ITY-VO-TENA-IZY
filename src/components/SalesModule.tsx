@@ -321,31 +321,65 @@ export function SalesModule({
     } finally {
       setIsCategorizing(false);
     }
+  const deleteSales = async (saleIds: string[]) => {
+    console.log('🔄 SalesModule: deleteSales called with IDs:', saleIds);
+    
+    if (!onDeleteSales) {
+      console.error('❌ onDeleteSales function not provided');
+      return false;
+    }
+    
+    try {
+      const result = await onDeleteSales(saleIds);
+      console.log('🔄 SalesModule: deleteSales result:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ SalesModule: deleteSales error:', error);
+      return false;
+    }
   };
 
   // Smart deletion
   const handleSmartDelete = () => {
     if (selectedSales.size === 0) return;
+    console.log('🔄 Opening delete modal for sales:', Array.from(selectedSales));
     setShowDeleteModal(true);
   };
 
   const confirmDelete = async () => {
-    if (!onDeleteSales || selectedSales.size === 0) return;
+    if (!onDeleteSales || selectedSales.size === 0) {
+      console.warn('⚠️ Cannot delete: missing function or no sales selected');
+      showToast('error', 'Impossible de supprimer: aucune vente sélectionnée');
+      return;
+    }
 
+    const saleIds = Array.from(selectedSales);
+    console.log('🗑️ Confirming deletion of sales:', saleIds);
+    
     setIsDeleting(true);
     try {
-      const success = await onDeleteSales(Array.from(selectedSales));
+      const success = await onDeleteSales(saleIds);
+      console.log('🔄 Delete operation result:', success);
+      
       if (success) {
+        console.log('✅ Sales deleted successfully');
         setSelectedSales(new Set());
         setShowDeleteModal(false);
-        onRefreshData();
-        showToast('success', `${selectedSales.size} vente(s) supprimée(s) avec succès`);
+        
+        // Show success message
+        showToast('success', `${saleIds.length} vente(s) supprimée(s) avec succès`);
+        
+        // Refresh data to ensure UI consistency
+        setTimeout(() => {
+          onRefreshData();
+        }, 500);
       } else {
-        showToast('error', 'Erreur lors de la suppression des ventes');
+        console.error('❌ Delete operation failed');
+        showToast('error', 'Erreur lors de la suppression des ventes. Veuillez réessayer.');
       }
     } catch (error) {
       console.error('Error deleting sales:', error);
-      showToast('error', 'Erreur lors de la suppression des ventes');
+      showToast('error', 'Erreur technique lors de la suppression des ventes');
     } finally {
       setIsDeleting(false);
     }
@@ -850,6 +884,7 @@ export function SalesModule({
                       {onDeleteSales && (
                         <button 
                           onClick={() => {
+                            console.log('🗑️ Single sale delete clicked for:', sale.id);
                             setSelectedSales(new Set([sale.id]));
                             setShowDeleteModal(true);
                           }}
@@ -948,7 +983,8 @@ export function SalesModule({
                       return sum + (sale?.total || 0);
                     }, 0)
                   )}</strong></div>
-                  <div>• Les quantités vendues seront également supprimées du stock</div>
+                  <div>• <strong>Attention :</strong> Cette action est irréversible</div>
+                  <div>• Les données seront définitivement supprimées de la base de données</div>
                 </div>
               </div>
 

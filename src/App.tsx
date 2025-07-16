@@ -80,7 +80,7 @@ function AppContent() {
           <SalesModule 
             registerSales={registerSales}
             onRefreshData={refreshData}
-            onDeleteSales={deleteSales}
+            onDeleteSales={deleteRegisterSales}
             onUpdateSale={updateSale}
             onCategorizeSales={categorizeSales}
           />

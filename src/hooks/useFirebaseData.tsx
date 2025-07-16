@@ -33,6 +33,7 @@ export function useFirebaseData() {
 
   // Load initial data
   const loadInitialData = useCallback(async () => {
+    console.log('🔄 Loading initial data...');
     setLoading(true);
     try {
       const [salesData, productsData] = await Promise.all([
@@ -41,12 +42,16 @@ export function useFirebaseData() {
         loadAlerts()
       ]);
       
+      console.log(`📊 Loaded: ${salesData.length} sales, ${productsData.length} products`);
+      
       // Calculate dashboard stats after loading data
       const stats = calculateDashboardStats(salesData, productsData);
       setDashboardStats(stats);
       
       // Update products with sales data for consistency
       updateProductsWithSalesData(productsData, salesData);
+      
+      console.log('✅ Initial data loading completed');
     } catch (error) {
       console.error('Error loading initial data:', error);
     } finally {
@@ -186,11 +191,14 @@ export function useFirebaseData() {
   // Load register sales from Firestore
   const loadRegisterSales = async () => {
     try {
+      console.log('📊 Loading register sales from Firestore...');
       const salesQuery = query(
         collection(db, 'register_sales'),
         orderBy('date', 'desc')
       );
       const salesSnapshot = await getDocs(salesQuery);
+      
+      console.log(`📊 Found ${salesSnapshot.docs.length} sales documents`);
       
       // Process sales data with proper date conversion
       const salesData = salesSnapshot.docs.map(doc => {
@@ -223,9 +231,11 @@ export function useFirebaseData() {
       });
       
       setRegisterSales(salesData);
+      console.log(`✅ Register sales loaded: ${salesData.length} items`);
       return salesData;
     } catch (error) {
       console.error('Error loading register sales:', error);
+      setRegisterSales([]);
       return [];
     }
   };
@@ -397,26 +407,50 @@ export function useFirebaseData() {
   // Delete register sale
   const deleteRegisterSale = async (id: string) => {
     try {
+      console.log('🗑️ Deleting single sale:', id);
       await deleteDoc(doc(db, 'register_sales', id));
+      console.log('✅ Sale deleted successfully from Firestore');
+      
+      // Update local state immediately for better UX
+      setRegisterSales(prev => prev.filter(sale => sale.id !== id));
+      
+      // Then refresh all data to ensure consistency
       await loadInitialData();
+      return true;
     } catch (error) {
       console.error('Error deleting register sale:', error);
-      throw error;
+      return false;
     }
   };
 
   // Delete multiple register sales
   const deleteRegisterSales = async (ids: string[]) => {
     try {
+      console.log('🗑️ Deleting multiple sales:', ids);
+      
+      if (ids.length === 0) {
+        console.warn('No sale IDs provided for deletion');
+        return false;
+      }
+      
       const batch = writeBatch(db);
       ids.forEach(id => {
+        console.log('Adding to batch delete:', id);
         batch.delete(doc(db, 'register_sales', id));
       });
+      
       await batch.commit();
+      console.log('✅ Batch delete completed successfully');
+      
+      // Update local state immediately for better UX
+      setRegisterSales(prev => prev.filter(sale => !ids.includes(sale.id)));
+      
+      // Then refresh all data to ensure consistency
       await loadInitialData();
+      return true;
     } catch (error) {
       console.error('Error deleting register sales:', error);
-      throw error;
+      return false;
     }
   };
 
@@ -616,9 +650,6 @@ export function useFirebaseData() {
   // Update sale (alias for updateRegisterSale)
   const updateSale = updateRegisterSale;
 
-  // Delete sales (alias for deleteRegisterSales)
-  const deleteSales = deleteRegisterSales;
-
   // Categorize sales (placeholder function)
   const categorizeSales = async (saleIds: string[], category: string) => {
     try {
@@ -657,7 +688,6 @@ export function useFirebaseData() {
     updateSale,
     deleteRegisterSale,
     deleteRegisterSales,
-    deleteSales,
     categorizeSales,
     addProduct,
     addProducts,
