@@ -186,11 +186,13 @@ export function useFirebaseData() {
   // Load register sales from Firestore
   const loadRegisterSales = async () => {
     try {
+      console.log('🔄 Loading register sales from Firestore...');
       const salesQuery = query(
         collection(db, 'register_sales'),
         orderBy('date', 'desc')
       );
       const salesSnapshot = await getDocs(salesQuery);
+      console.log(`📊 Found ${salesSnapshot.docs.length} sales records`);
       
       // Process sales data with proper date conversion
       const salesData = salesSnapshot.docs.map(doc => {
@@ -222,10 +224,11 @@ export function useFirebaseData() {
         } as RegisterSale;
       });
       
+      console.log(`✅ Successfully loaded ${salesData.length} sales`);
       setRegisterSales(salesData);
       return salesData;
     } catch (error) {
-      console.error('Error loading register sales:', error);
+      console.error('❌ Error loading register sales:', error);
       return [];
     }
   };
@@ -417,14 +420,27 @@ export function useFirebaseData() {
   // Delete multiple register sales
   const deleteRegisterSales = async (ids: string[]) => {
     try {
+      console.log(`🗑️ Deleting ${ids.length} sales with IDs:`, ids);
+      
+      // Create a batch for better performance and atomicity
       const batch = writeBatch(db);
+      
+      // Add each document to the batch for deletion
       ids.forEach(id => {
-        batch.delete(doc(db, 'register_sales', id));
+        const docRef = doc(db, 'register_sales', id);
+        batch.delete(docRef);
+        console.log(`  - Added sale ${id} to deletion batch`);
       });
+      
+      // Commit the batch operation
       await batch.commit();
+      console.log(`✅ Successfully deleted ${ids.length} sales`);
+      
+      // Reload data to update the UI
       await loadInitialData();
+      return true;
     } catch (error) {
-      console.error('Error deleting register sales:', error);
+      console.error('❌ Error deleting register sales:', error);
       throw error;
     }
   };

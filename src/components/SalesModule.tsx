@@ -328,12 +328,17 @@ export function SalesModule({
 
     setIsDeleting(true);
     try {
-      const success = await onDeleteSales(Array.from(selectedSales));
+      await onDeleteSales(Array.from(selectedSales));
       // Always consider it a success if no error was thrown
-      setSelectedSales(new Set());
-      setShowDeleteModal(false);
-      onRefreshData();
-      showToast('success', `${selectedSales.size} vente(s) supprimée(s) avec succès`);
+      const count = selectedSales.size;
+      setSelectedSales(new Set()); // Clear selection
+      setShowDeleteModal(false); // Close modal
+      
+      // Refresh data to update the UI
+      await onRefreshData();
+      
+      // Show success message after refresh
+      showToast('success', `${count} vente(s) supprimée(s) avec succès`);
     } catch (error) {
       console.error('Error deleting sales:', error);
       showToast('error', 'Erreur lors de la suppression des ventes');
