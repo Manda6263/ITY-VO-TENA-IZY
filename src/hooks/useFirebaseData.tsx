@@ -420,24 +420,55 @@ export function useFirebaseData() {
   // Delete multiple register sales
   const deleteRegisterSales = async (ids: string[]) => {
     try {
-      console.log(`🗑️ Deleting ${ids.length} sales with IDs:`, ids);
+      console.log(`🗑️ Attempting to delete ${ids.length} sales with IDs:`, ids);
       
       // Create a batch for better performance and atomicity
       const batch = writeBatch(db);
       
       // Add each document to the batch for deletion
       ids.forEach(id => {
-        const docRef = doc(db, 'register_sales', id);
+        // Ensure we're using the correct collection name
+        const docRef = doc(db, 'register_sales', id.trim());
         batch.delete(docRef);
-        console.log(`  - Added sale ${id} to deletion batch`);
+        console.log(`  - Added sale ${id.trim()} to deletion batch`);
       });
       
       // Commit the batch operation
-      await batch.commit();
-      console.log(`✅ Successfully deleted ${ids.length} sales`);
+      try {
+        await batch.commit();
+        console.log(`✅ Batch commit successful for ${ids.length} sales`);
+      } catch (batchError) {
+        console.error('❌ Error committing batch:', batchError);
+        throw batchError;
+      }
       
-      // Reload data to update the UI
-      await loadInitialData();
+      // Verify deletion by checking if documents still exist
+      let deletionVerified = true;
+      for (const id of ids) {
+        const docRef = doc(db, 'register_sales', id.trim());
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          console.error(`❌ Document ${id} still exists after deletion attempt!`);
+          deletionVerified = false;
+        } else {
+          console.log(`✅ Verified deletion of document ${id}`);
+        }
+      }
+      
+      if (!deletionVerified) {
+        console.error('❌ Some documents were not deleted properly');
+        throw new Error('Some sales could not be deleted. Please try again.');
+      }
+      
+      // Force reload data to update the UI
+      const freshData = await loadRegisterSales();
+      setRegisterSales(freshData);
+      
+      // Recalculate dashboard stats with fresh data
+      const updatedProducts = await loadProducts();
+      const stats = calculateDashboardStats(freshData, updatedProducts);
+      setDashboardStats(stats);
+      
       return true;
     } catch (error) {
       console.error('❌ Error deleting register sales:', error);
@@ -794,7 +825,8 @@ export function useFirebaseData() {
 
   // Refresh data
   const refreshData = useCallback(() => {
-    loadInitialData();
+    console.log('🔄 Manually refreshing all data...');
+    return loadInitialData();
   }, [loadInitialData]);
 
   // Load data on mount

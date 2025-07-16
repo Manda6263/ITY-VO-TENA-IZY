@@ -46,6 +46,7 @@ export function SalesModule({
   onUpdateSale,
   onCategorizeSales 
 }: SalesModuleProps) {
+  const [loading, setLoading] = useState(false);
   const { viewState, updateState, updateFilters, updateDateRange, updateSelectedItems, updateModals } = useViewState('sales');
   useScrollPosition('sales');
 
@@ -67,6 +68,22 @@ export function SalesModule({
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
+  
+  // Enhanced refresh function with loading state
+  const handleRefresh = async () => {
+    if (loading) return;
+    
+    setLoading(true);
+    try {
+      await onRefreshData();
+      showToast('success', 'Données actualisées avec succès');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      showToast('error', 'Erreur lors de l\'actualisation des données');
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // ✅ NEW: Toast notification state
   const [toastNotification, setToastNotification] = useState<{
@@ -326,16 +343,35 @@ export function SalesModule({
   const confirmDelete = async () => {
     if (!onDeleteSales || selectedSales.size === 0) return;
 
+    // Store the count before clearing selection
+    const count = selectedSales.size;
+    const selectedIds = Array.from(selectedSales);
+    
     setIsDeleting(true);
     try {
-      await onDeleteSales(Array.from(selectedSales));
-      // Always consider it a success if no error was thrown
-      const count = selectedSales.size;
-      setSelectedSales(new Set()); // Clear selection
-      setShowDeleteModal(false); // Close modal
+      console.log(`🗑️ Attempting to delete ${selectedIds.length} sales`);
       
-      // Refresh data to update the UI
-      await onRefreshData();
+      // Call the delete function and wait for it to complete
+      const success = await onDeleteSales(selectedIds);
+      
+      if (!success) {
+        throw new Error('Deletion failed without error');
+      }
+      
+      console.log(`✅ Deletion successful for ${count} sales`);
+      
+      // Clear selection and close modal
+      setSelectedSales(new Set());
+      setShowDeleteModal(false);
+      
+      // Force refresh data to update the UI
+      try {
+        await onRefreshData();
+        console.log('✅ Data refreshed after deletion');
+      } catch (refreshError) {
+        console.error('❌ Error refreshing data after deletion:', refreshError);
+        // Still show success message since deletion worked
+      }
       
       // Show success message after refresh
       showToast('success', `${count} vente(s) supprimée(s) avec succès`);
@@ -357,18 +393,32 @@ export function SalesModule({
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Gestion des Ventes</h1>
-          <p className="text-gray-400">Consultez et analysez toutes vos transactions</p>
+          <p className="text-gray-400">
+            Consultez et analysez toutes vos transactions
+            {loading && <span className="ml-2 text-blue-400">(Actualisation en cours...)</span>}
+          </p>
         </div>
         
         <div className="flex space-x-3">
           <button
-            onClick={onRefreshData}
+            onClick={handleRefresh}
+            disabled={loading}
             className="bg-gradient-to-r from-blue-500 to-blue-600 text-white font-semibold 
                        py-3 px-6 rounded-xl hover:from-blue-600 hover:to-blue-700 
-                       transition-all duration-200 flex items-center space-x-2"
+                       transition-all duration-200 flex items-center space-x-2
+                       disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <RefreshCw className="w-5 h-5" />
-            <span>Actualiser</span>
+            {loading ? (
+              <>
+                <RefreshCw className="w-5 h-5 animate-spin" />
+                <span>Actualisation...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-5 h-5" />
+                <span>Actualiser</span>
+              </>
+            )}
           </button>
           
           <button
