@@ -679,13 +679,15 @@ export function useFirebaseData() {
         
         // Calculate current stock based on initial stock and sales
         const stock = Math.max(0, config.initialStock - quantitySold);
+        
+        const updatedProduct = {
+          initialStock: config.initialStock,
           initialStockDate: config.initialStockDate,
           minStock: config.minStock,
-          quantitySold: stats.quantitySold,
-          stock: 0, // Default to 0 for new products from sales
+          quantitySold: quantitySold,
+          stock: stock,
           stockValue: Math.round((stock * productData.price) * 100) / 100, // Round to 2 decimal places
-          isConfigured: true,
-          stockValue: 0 // Default to 0 for new products from sales
+          isConfigured: true
         };
         
         console.log('✅ Updating product with:', updatedProduct);
@@ -769,7 +771,6 @@ export function useFirebaseData() {
     refreshData,
     autoSyncProductsFromSales,
     updateStockConfig,
-    categorizeSales,
     deleteSelectedProducts: deleteProducts
   };
 }
