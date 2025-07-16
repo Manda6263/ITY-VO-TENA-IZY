@@ -886,6 +886,7 @@ export function SalesModule({
                       {onDeleteSales && (
                         <button 
                           onClick={() => {
+                            console.log('🗑️ Single sale delete clicked for:', sale.id);
                             setSelectedSales(new Set([sale.id]));
                             setShowDeleteModal(true);
                           }}
@@ -984,7 +985,8 @@ export function SalesModule({
                       return sum + (sale?.total || 0);
                     }, 0)
                   )}</strong></div>
-                  <div>• Les quantités vendues seront également supprimées du stock</div>
+                  <div>• <strong>Attention :</strong> Cette action est irréversible</div>
+                  <div>• Les données seront définitivement supprimées de la base de données</div>
                 </div>
               </div>
 
