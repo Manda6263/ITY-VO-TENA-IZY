@@ -17,7 +17,7 @@ import {
   CheckCircle
 } from 'lucide-react';
 import { Product, RegisterSale } from '../types';
-import { validateStockConfiguration, getDefaultInitialStockDate, formatStockDate } from '../utils/calculateStockFinal';
+import { validateStockConfiguration, getDefaultInitialStockDate, formatStockDate, clearProductSalesCache } from '../utils/calculateStockFinal';
 
 interface ProductEditModalProps {
   product?: Product; // undefined for create mode
@@ -145,6 +145,9 @@ export function ProductEditModal({
   const handleSave = async () => {
     if (!validateForm()) return;
 
+    // Clear the product sales cache to ensure fresh calculations
+    clearProductSalesCache();
+    
     try {
       const productData: Partial<Product> = {
         initialStock: parseInt(formData.initialStock),
@@ -439,8 +442,11 @@ export function ProductEditModal({
                   {errors.initialStockDate && (
                     <p className="text-red-400 text-sm mt-1">{errors.initialStockDate}</p>
                   )}
-                  <p className="text-gray-500 text-xs mt-1">
-                    Les ventes à partir de cette date seront déduites du stock initial pour calculer le stock actuel
+                  <p className="text-gray-500 text-xs mt-1 space-y-1">
+                    <span className="block">Les ventes à partir de cette date seront déduites du stock initial pour calculer le stock actuel.</span>
+                    <span className="block text-blue-400">
+                      Si vous choisissez une date passée, les ventes depuis cette date seront automatiquement déduites.
+                    </span>
                   </p>
                 </div>
               </div>

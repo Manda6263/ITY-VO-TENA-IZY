@@ -1,5 +1,5 @@
 import { Product, RegisterSale } from '../types';
-import { format, parseISO, isAfter, isBefore, startOfDay } from 'date-fns';
+import { format, parseISO, isAfter, isBefore, startOfDay, isValid } from 'date-fns';
 
 // Create a cache for product sales to avoid repeated filtering
 const productSalesCache = new Map<string, RegisterSale[]>();
@@ -57,6 +57,7 @@ export function calculateStockFinal(
   // Parse the initial stock date
   const stockDate = parseISO(initialStockDate);
   const stockDateStart = startOfDay(stockDate);
+  console.log(`🔍 Calculating stock with effective date: ${stockDateStart.toISOString()}`);
   
   // Separate sales before and after the stock date
   const salesBeforeStockDate: RegisterSale[] = [];
@@ -64,6 +65,7 @@ export function calculateStockFinal(
   
   productSales.forEach(sale => {
     if (isBefore(sale.date, stockDateStart)) {
+      console.log(`⏮️ Sale before effective date: ${sale.date.toISOString()} - ${sale.product} (${sale.quantity} units)`);
       salesBeforeStockDate.push(sale);
     } else {
       salesAfterStockDate.push(sale);
@@ -72,6 +74,7 @@ export function calculateStockFinal(
   
   // Calculate final stock using only sales after the stock date
   const validSoldQuantity = salesAfterStockDate.reduce((sum, sale) => sum + sale.quantity, 0);
+  console.log(`📊 Total sold after effective date: ${validSoldQuantity} units from ${salesAfterStockDate.length} sales`);
   const finalStock = Math.max(0, initialStock - validSoldQuantity);
   
   // Determine if there are inconsistencies
@@ -96,8 +99,11 @@ export function calculateStockFinal(
  * Find all sales that match a specific product
  */
 function findProductSales(product: Product, allSales: RegisterSale[], useCache: boolean = true): RegisterSale[] {
+  console.log(`🔍 Finding sales for product: ${product.name} (${product.category})`);
+  
   // Check cache first
   if (useCache && productSalesCache.has(product.id)) {
+    console.log(`🔄 Using cached sales for product ${product.id}`);
     return productSalesCache.get(product.id)!;
   }
   
@@ -127,6 +133,7 @@ function findProductSales(product: Product, allSales: RegisterSale[], useCache: 
     return false;
   });
   
+  console.log(`📊 Found ${result.length} matching sales for product ${product.name}`);
   // Store in cache
   if (useCache) {
     productSalesCache.set(product.id, result);
@@ -139,13 +146,14 @@ function findProductSales(product: Product, allSales: RegisterSale[], useCache: 
  * Validate stock configuration and return warnings
  */
 export function validateStockConfiguration(
-  product: Product, 
+  product: Product,
   allSales: RegisterSale[],
 ): StockValidationWarning[] {
   const warnings: StockValidationWarning[] = [];
   
   // Check if initial stock date is set
   if (!product.initialStockDate) {
+    console.log(`⚠️ No initial stock date set for product ${product.name}`);
     warnings.push({
       type: 'no_initial_stock_date',
       message: 'Aucune date de stock initial définie - toutes les ventes sont prises en compte',
@@ -155,6 +163,12 @@ export function validateStockConfiguration(
   }
   
   // Check if stock date is in the future
+  if (!product.initialStockDate || !isValid(parseISO(product.initialStockDate))) {
+    console.log(`⚠️ Invalid initial stock date for product ${product.name}`);
+    return warnings;
+  }
+  
+  // Now we can safely parse the date
   const stockDate = parseISO(product.initialStockDate);
   const today = new Date();
   
@@ -254,5 +268,6 @@ export function formatStockDate(dateString: string): string {
  * Clear the product sales cache - call this when sales data changes
  */
 export function clearProductSalesCache(): void {
+  console.log('🧹 Clearing product sales cache');
   productSalesCache.clear();
 }
