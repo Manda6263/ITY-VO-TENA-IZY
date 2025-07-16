@@ -36,7 +36,7 @@ function AppContent() {
     categorizeSales,
     deleteProduct,
     deleteProducts,
-    deleteSales,
+    deleteRegisterSales,
     markAlertAsRead,
     refreshData,
     autoSyncProductsFromSales
