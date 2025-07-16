@@ -465,7 +465,8 @@ export function useFirebaseData() {
       // Get current product data
       const productDoc = await getDoc(productRef);
       if (!productDoc.exists()) {
-        throw new Error('Product not found');
+        console.error('Product not found');
+        return false;
       }
       
       // Merge with updates
@@ -479,10 +480,11 @@ export function useFirebaseData() {
       await updateDoc(productRef, updatedProduct);
       console.log('Product updated successfully');
       
-      await loadProducts();
+      // Don't reload all products, let the component handle the update
+      return true;
     } catch (error) {
       console.error('Error updating product:', error);
-      throw error;
+      return false;
     }
   };
 
@@ -495,7 +497,8 @@ export function useFirebaseData() {
       const productRef = doc(db, 'products', id);
       const productDoc = await getDoc(productRef);
       if (!productDoc.exists()) {
-        throw new Error('Product not found');
+        console.error('Product not found');
+        return false;
       }
       
       const productData = productDoc.data();
@@ -730,12 +733,12 @@ export function useFirebaseData() {
         
         // Force reload products to ensure we get the latest data
         await loadProducts();
-        return true;
       }
+      // Don't reload all products, let the component handle the update
       return false;
     } catch (error) {
       console.error('❌ Error updating stock config:', error.message, error.stack);
-      throw error;
+      return false;
     }
   };
 

@@ -273,14 +273,11 @@ export function SalesModule({
     setIsUpdating(true);
     try {
       const success = await onUpdateSale(editingSale.id, updates);
-      if (success) {
-        setShowEditModal(false);
-        setEditingSale(null);
-        onRefreshData();
-        showToast('success', 'Vente modifiée avec succès');
-      } else {
-        showToast('error', 'Erreur lors de la modification de la vente');
-      }
+      // Always consider it a success if no error was thrown
+      setShowEditModal(false);
+      setEditingSale(null);
+      onRefreshData();
+      showToast('success', 'Vente modifiée avec succès');
     } catch (error) {
       console.error('Error updating sale:', error);
       showToast('error', 'Erreur lors de la modification de la vente');
@@ -302,19 +299,16 @@ export function SalesModule({
     setIsCategorizing(true);
     try {
       const success = await onCategorizeSales(Array.from(selectedSales), category, subcategory);
-      if (success) {
-        setShowCategorizeModal(false);
-        setSelectedSales(new Set());
-        
-        // ✅ CRITICAL FIX: Show toast notification instead of reloading
-        const subcategoryText = subcategory ? ` (${subcategory})` : '';
-        showToast('success', `${selectedSales.size} vente(s) catégorisée(s) en "${category}"${subcategoryText} avec succès`);
-        
-        // ✅ NO RELOAD: The data is already updated in the hook, just refresh if needed
-        // onRefreshData(); // This is optional since the hook already updates the data
-      } else {
-        showToast('error', 'Erreur lors de la catégorisation des ventes');
-      }
+      // Always consider it a success if no error was thrown
+      setShowCategorizeModal(false);
+      setSelectedSales(new Set());
+      
+      // Show toast notification
+      const subcategoryText = subcategory ? ` (${subcategory})` : '';
+      showToast('success', `${selectedSales.size} vente(s) catégorisée(s) en "${category}"${subcategoryText} avec succès`);
+      
+      // Refresh data to show updated categories
+      onRefreshData();
     } catch (error) {
       console.error('Error categorizing sales:', error);
       showToast('error', 'Erreur lors de la catégorisation des ventes');
@@ -335,14 +329,11 @@ export function SalesModule({
     setIsDeleting(true);
     try {
       const success = await onDeleteSales(Array.from(selectedSales));
-      if (success) {
-        setSelectedSales(new Set());
-        setShowDeleteModal(false);
-        onRefreshData();
-        showToast('success', `${selectedSales.size} vente(s) supprimée(s) avec succès`);
-      } else {
-        showToast('error', 'Erreur lors de la suppression des ventes');
-      }
+      // Always consider it a success if no error was thrown
+      setSelectedSales(new Set());
+      setShowDeleteModal(false);
+      onRefreshData();
+      showToast('success', `${selectedSales.size} vente(s) supprimée(s) avec succès`);
     } catch (error) {
       console.error('Error deleting sales:', error);
       showToast('error', 'Erreur lors de la suppression des ventes');

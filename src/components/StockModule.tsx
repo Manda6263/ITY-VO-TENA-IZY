@@ -119,6 +119,11 @@ export default function StockModule({
   const [showMultiDeleteModal, setShowMultiDeleteModal] = useState(false);
   const [isMultiDeleting2, setIsMultiDeleting2] = useState(false);
   const [showMultiDeleteConfirm, setShowMultiDeleteConfirm] = useState(false);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    type: 'success' | 'error';
+    message: string;
+  }>({ show: false, type: 'success', message: '' });
 
   // Sync state changes back to viewState
   useEffect(() => {
@@ -458,6 +463,15 @@ export default function StockModule({
     setShowEditModal(true);
   };
 
+  // Show notification helper
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    setNotification({ show: true, type, message });
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      setNotification(prev => ({ ...prev, show: false }));
+    }, 3000);
+  };
+
   const handleSaveProduct = async (updates: Partial<Product>) => {
     if (!editingProduct) return;
     
@@ -686,6 +700,37 @@ export default function StockModule({
           </button>
         </div>
       </div>
+
+      {/* Notifications */}
+      <AnimatePresence>
+        {notification.show && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -50, scale: 0.95 }}
+            className="fixed top-4 right-4 z-50"
+          >
+            <div className={`p-4 rounded-xl border shadow-2xl backdrop-blur-xl flex items-center space-x-3 min-w-80 ${
+              notification.type === 'success'
+                ? 'bg-green-500/20 border-green-500/30 text-green-400'
+                : 'bg-red-500/20 border-red-500/30 text-red-400'
+            }`}>
+              {notification.type === 'success' ? (
+                <CheckCircle className="w-6 h-6 flex-shrink-0" />
+              ) : (
+                <AlertTriangle className="w-6 h-6 flex-shrink-0" />
+              )}
+              <span className="font-medium flex-1">{notification.message}</span>
+              <button
+                onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+                className="text-gray-400 hover:text-white transition-colors duration-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* No Products Notice */}
       {products.length === 0 && (
