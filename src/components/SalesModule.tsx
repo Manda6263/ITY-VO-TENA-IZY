@@ -985,8 +985,7 @@ export function SalesModule({
                       return sum + (sale?.total || 0);
                     }, 0)
                   )}</strong></div>
-                  <div>• <strong>Attention :</strong> Cette action est irréversible</div>
-                  <div>• Les données seront définitivement supprimées de la base de données</div>
+                  <div>• Les quantités vendues seront également supprimées du stock</div>
                 </div>
               </div>
 
