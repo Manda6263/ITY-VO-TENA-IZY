@@ -29,11 +29,14 @@ import {
   CheckSquare
 } from 'lucide-react';
 import { Product, RegisterSale } from '../types';
-import { format, startOfDay, endOfDay, subDays, isAfter, isBefore } from 'date-fns';
+import { format, startOfDay, endOfDay, subDays, isAfter, isBefore, parseISO } from 'date-fns';
 import { exportToExcel } from '../utils/excelUtils';
 import { ProductEditModal } from './ProductEditModal';
 import { useViewState, useScrollPosition } from '../hooks/useViewState';
 import { useLanguage } from '../contexts/LanguageContext';
+import { calculateTotalQuantitySold } from '../utils/salesCalculations';
+import { StockImportModule } from './StockImportModule';
+import { clearProductSalesCache, debugStockCalculation } from '../utils/calculateStockFinal';
 
 interface StockModuleProps {
   products: Product[];
@@ -115,6 +118,7 @@ export default function StockModule({
   const [selectedProductIds, setSelectedProductIds] = useState<Set<string>>(new Set());
   const [showMultiDeleteModal, setShowMultiDeleteModal] = useState(false);
   const [isMultiDeleting2, setIsMultiDeleting2] = useState(false);
+  const [showMultiDeleteConfirm, setShowMultiDeleteConfirm] = useState(false);
 
   // Sync state changes back to viewState
   useEffect(() => {
@@ -268,41 +272,42 @@ export default function StockModule({
 
   // Selection handlers
   const toggleSelectProduct = (productId: string) => {
-    const newSelected = new Set(selectedProductIds);
+    const newSelected = new Set(selectedProducts);
     if (newSelected.has(productId)) {
       newSelected.delete(productId);
     } else {
       newSelected.add(productId);
     }
-    setSelectedProductIds(newSelected);
+    setSelectedProducts(newSelected);
   };
 
   const toggleSelectAll = () => {
-    if (selectedProductIds.size === paginatedProducts.length) {
-      setSelectedProductIds(new Set());
+    if (selectedProducts.size === paginatedProducts.length) {
+      setSelectedProducts(new Set());
     } else {
-      setSelectedProductIds(new Set(paginatedProducts.map(p => p.id)));
+      setSelectedProducts(new Set(paginatedProducts.map(product => product.id)));
     }
   };
 
-  const handleMultiDelete = () => {
-    if (selectedProductIds.size === 0) return;
-    setShowMultiDeleteModal(true);
+  const handleMultiDelete = async () => {
+    if (selectedProducts.size === 0) return;
+    setShowMultiDeleteConfirm(true);
   };
 
   const confirmMultiDelete = async () => {
-    if (selectedProductIds.size === 0 || !onDeleteProducts) return;
+    if (selectedProducts.size === 0 || !onDeleteProducts) return;
 
-    setIsMultiDeleting2(true);
+    setIsMultiDeleting(true);
     try {
-      await onDeleteProducts(Array.from(selectedProductIds));
-      setSelectedProductIds(new Set());
-      setShowMultiDeleteModal(false);
+      console.log(`🗑️ Deleting ${selectedProducts.size} products:`, Array.from(selectedProducts));
+      await onDeleteProducts(Array.from(selectedProducts));
+      setSelectedProducts(new Set());
+      setShowMultiDeleteConfirm(false);
       onRefreshData();
     } catch (error) {
       console.error('Error deleting products:', error);
     } finally {
-      setIsMultiDeleting2(false);
+      setIsMultiDeleting(false);
     }
   };
 
@@ -453,28 +458,34 @@ export default function StockModule({
     setShowEditModal(true);
   };
 
-  const handleSaveProduct = async (productData: Partial<Product>) => {
-    if (!editingProduct || !updateStockConfig) return;
-
-    setIsUpdating(true); 
+  const handleSaveProduct = async (updates: Partial<Product>) => {
+    if (!editingProduct) return;
+    
+    console.log('🔄 Saving product updates:', updates);
+    
     try {
-      const success = await updateStockConfig(editingProduct.id, {
-        initialStock: productData.initialStock || 0,
-        initialStockDate: productData.initialStockDate || format(new Date(), 'yyyy-MM-dd'),
-        minStock: productData.minStock || 5
-      });
-      
-      if (success) {
-        // Modal will close automatically after success message
+      if (onUpdateProduct) {
+        // Debug the stock calculation before saving
+        if (updates.initialStock !== undefined && updates.initialStockDate) {
+          console.log('🔍 DEBUG: Stock calculation before saving');
+          const debugProduct = {
+            ...editingProduct,
+            initialStock: updates.initialStock,
+            initialStockDate: updates.initialStockDate
+          };
+          debugStockCalculation(debugProduct, registerSales);
+        }
+        
+        await onUpdateProduct(editingProduct.id, updates);
+        setShowEditModal(false);
+        setEditingProduct(null);
         onRefreshData();
         return true;
       }
       return false;
     } catch (error) {
       console.error('Error updating product:', error);
-      return false;
-    } finally {
-      setIsUpdating(false);
+      throw error;
     }
   };
 
@@ -710,35 +721,33 @@ export default function StockModule({
       )}
 
       {/* Multiple Selection Actions */}
-      {selectedProductIds.size > 0 && (
+      {selectedProducts.size > 0 && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-xl 
-                     border border-blue-500/30 rounded-2xl p-4"
+                     border border-blue-500/30 rounded-2xl p-4 mb-6"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <CheckSquare className="w-5 h-5 text-blue-400" />
               <span className="text-white font-medium">
-                {selectedProductIds.size} produit(s) sélectionné(s)
+                {selectedProducts.size} produit(s) sélectionné(s)
               </span>
             </div>
             
             <div className="flex space-x-3">
-              {onDeleteProducts && (
-                <button
-                  onClick={handleMultiDelete}
-                  className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg hover:bg-red-500/30 
-                             transition-all duration-200 flex items-center space-x-2 text-sm"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Supprimer la sélection</span>
-                </button>
-              )}
+              <button
+                onClick={handleMultiDelete}
+                className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg hover:bg-red-500/30 
+                           transition-all duration-200 flex items-center space-x-2 text-sm"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Supprimer la sélection</span>
+              </button>
               
               <button
-                onClick={() => setSelectedProductIds(new Set())}
+                onClick={() => setSelectedProducts(new Set())}
                 className="bg-gray-500/20 text-gray-400 px-4 py-2 rounded-lg hover:bg-gray-500/30 
                            transition-all duration-200 text-sm"
               >
@@ -1101,44 +1110,6 @@ export default function StockModule({
         </motion.div>
       </motion.div>}
 
-      {/* Multiple Selection Actions */}
-      {selectedProducts.size > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-r from-blue-500/20 to-purple-500/20 backdrop-blur-xl 
-                     border border-blue-500/30 rounded-2xl p-4 mb-4"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <CheckSquare className="w-5 h-5 text-blue-400" />
-              <span className="text-white font-medium">
-                {selectedProducts.size} produit(s) sélectionné(s)
-              </span>
-            </div>
-            
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowDeleteMultipleModal(true)}
-                className="bg-red-500/20 text-red-400 px-4 py-2 rounded-lg hover:bg-red-500/30 
-                           transition-all duration-200 flex items-center space-x-2 text-sm"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Supprimer la sélection</span>
-              </button>
-              
-              <button
-                onClick={() => setSelectedProducts(new Set())}
-                className="bg-gray-500/20 text-gray-400 px-4 py-2 rounded-lg hover:bg-gray-500/30 
-                           transition-all duration-200 text-sm"
-              >
-                Annuler
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
       {/* Products Table */}
       {products.length > 0 && <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -1159,140 +1130,153 @@ export default function StockModule({
         <div className="overflow-x-auto mb-4">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-700">
-                <th className="py-3 px-2 text-slate-400">
+              <tr className="border-b border-gray-700">
+                <th className="text-left py-4 px-4">
                   <button
                     onClick={toggleSelectAll}
-                    className="text-slate-400 hover:text-white transition-colors duration-200 p-1"
+                    className="text-gray-400 hover:text-white transition-colors duration-200"
                   >
-                    {selectedProductIds.size === paginatedProducts.length && paginatedProducts.length > 0 ? (
-                      <CheckSquare className="w-5 h-5 text-blue-400" />
+                    {selectedProducts.size === paginatedProducts.length && paginatedProducts.length > 0 ? (
+                      <CheckSquare className="w-5 h-5" />
                     ) : (
                       <Square className="w-5 h-5" />
                     )}
                   </button>
                 </th>
-                {[
-                  { key: 'name', label: 'Produit' },
-                  { key: 'category', label: 'Catégorie' },
-                  { key: 'price', label: 'Prix Moyen' },
-                  { key: 'initialStock', label: 'Stock Initial' },
-                  { key: 'quantitySold', label: 'Vendu' },
-                  { key: 'stock', label: 'Stock Final' },
-                  { key: 'minStock', label: 'Stock Min' },
-                  { key: 'stockValue', label: 'Valeur' },
-                  { key: 'lastSale', label: 'Dernière Vente' },
-                  { key: 'status', label: 'Statut' }
-                ].map(({ key, label }) => (
-                  <th
-                    key={key}
-                    className="text-left py-3 px-4 text-slate-400 font-medium cursor-pointer hover:text-white
-                               transition-colors duration-200"
-                    onClick={() => handleSort(key as keyof Product)}
-                  >
-                    <div className="flex items-center space-x-1">
-                      <span>{label}</span>
-                      <ArrowUpDown className="w-4 h-4" />
-                    </div>
-                  </th>
-                ))}
-                <th className="text-left py-3 px-4 text-slate-400 font-medium">Actions</th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Produit</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Catégorie</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Prix Moyen</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Stock Initial</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Quantité Vendue</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Stock Final</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Stock Min</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Valeur Stock</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Dernière Vente</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Statut</span>
+                </th>
+                <th className="text-left py-4 px-4">
+                  <span className="text-gray-400 font-medium">Actions</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              {paginatedProducts.map((product, index) => {
-                const status = getStockStatus(product);
-                
-                return (
-                  <motion.tr
-                    key={product.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: index * 0.01 }}
-                    className={`border-b border-slate-700/50 hover:bg-slate-700/20 transition-colors duration-200 ${
-                      selectedProductIds.has(product.id) ? 'bg-blue-500/10' : ''
-                    }`}
-                  >
-                    <td className="py-3 px-2">
-                      <button
-                        onClick={() => toggleSelectProduct(product.id)}
-                        className="text-slate-400 hover:text-blue-400 transition-colors duration-200 p-1"
-                      >
-                        {selectedProductIds.has(product.id) ? (
-                          <CheckSquare className="w-5 h-5 text-blue-400" />
-                        ) : (
-                          <Square className="w-5 h-5" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="py-3 px-4 text-white font-medium">{product.name}</td>
-                    <td className="py-3 px-4">
-                      <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs font-medium">
-                        {product.category}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-slate-300">{formatCurrency(product.price)}</td>
-                    <td className="py-3 px-4 text-center text-white font-medium">
-                      {product.initialStock || 0}
-                      {product.initialStockDate && (
-                        <span className="block text-xs text-slate-400">
-                          {format(new Date(product.initialStockDate), 'dd/MM/yyyy')}
-                        </span>
+              {paginatedProducts.map((product) => (
+                <tr 
+                  key={product.id} 
+                  className={`border-b border-gray-700/50 hover:bg-gray-700/20 transition-colors duration-200 ${
+                    selectedProducts.has(product.id) ? 'bg-blue-500/10' : ''
+                  }`}
+                >
+                  <td className="py-4 px-4">
+                    <button
+                      onClick={() => toggleSelectProduct(product.id)}
+                      className="text-gray-400 hover:text-blue-400 transition-colors duration-200"
+                    >
+                      {selectedProducts.has(product.id) ? (
+                        <CheckSquare className="w-5 h-5 text-blue-400" />
+                      ) : (
+                        <Square className="w-5 h-5" />
                       )}
-                    </td>
-                    <td className="py-3 px-4 text-center text-blue-400 font-medium">
-                      {product.quantitySold || 0}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className={`font-bold ${
-                        product.stock === 0 ? 'text-red-400' :
-                        product.stock <= product.minStock ? 'text-orange-400' :
-                        'text-green-400'
-                      }`}>
-                        {product.stock}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center text-slate-300">{product.minStock}</td>
-                    <td className="py-3 px-4 text-slate-300">{formatCurrency(product.stockValue || 0)}</td>
-                    <td className="py-3 px-4 text-slate-300 text-sm">
-                      {product.lastSale ? format(product.lastSale, 'dd/MM/yyyy') : '-'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
-                        {status.label}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex space-x-2">
-                        <button 
-                          onClick={() => handleEditProduct(product)}
-                          className="p-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 
-                                     transition-all duration-200 mr-2"
-                          title="Configurer le stock"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </button>
-                        <button 
-                          onClick={() => {
-                            setEditingProduct(product);
-                            setShowEditModal(true);
-                          }}
-                          className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 
-                                     transition-all duration-200"
-                          title="Supprimer le produit"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                    </button>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-white font-medium">{product.name}</div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <span className="bg-purple-500/20 text-purple-400 px-2 py-1 rounded-full text-xs font-medium">
+                      {product.category}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-gray-300">{formatCurrency(product.price)}</div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-gray-300">{product.initialStock || 0}</div>
+                    {product.initialStockDate && (
+                      <div className="text-xs text-gray-500">
+                        Depuis: {format(parseISO(product.initialStockDate), 'dd/MM/yyyy')}
                       </div>
-                    </td>
-                  </motion.tr>
-                );
-              })}
+                    )}
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-blue-400 font-medium">{product.quantitySold || 0}</div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className={`font-bold ${
+                      product.stock === 0 ? 'text-red-400' :
+                      product.stock <= product.minStock ? 'text-orange-400' :
+                      'text-green-400'
+                    }`}>
+                      {product.stock}
+                    </div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-gray-300">{product.minStock}</div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-gray-300">{formatCurrency(product.stockValue || 0)}</div>
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="text-gray-300 text-sm">
+                      {product.lastSale ? format(product.lastSale, 'dd/MM/yyyy') : '-'}
+                    </div>
+                  </td>
+                  <td className="py-4 px-4">
+                    {(() => {
+                      const status = getStockStatus(product);
+                      return (
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.bg} ${status.color}`}>
+                          {status.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-4 px-4">
+                    <div className="flex space-x-2">
+                      <button 
+                        onClick={() => handleEditProduct(product)}
+                        className="p-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 
+                                   transition-all duration-200"
+                        title="Modifier le produit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteProduct(product.id)}
+                        className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 
+                                   transition-all duration-200"
+                        title="Supprimer le produit"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
           
           {filteredProducts.length === 0 && (
-            <div className="text-center py-8 text-slate-400">
+            <div className="text-center py-8 text-gray-400">
               <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
               <p>Aucun produit trouvé</p>
               {hasActiveFilters && (
@@ -1302,6 +1286,81 @@ export default function StockModule({
           )}
         </div>
       </motion.div>}
+
+      {/* Multiple Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showMultiDeleteConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-md"
+            >
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Confirmer la suppression multiple</h3>
+                  <p className="text-gray-400 text-sm">Cette action est irréversible</p>
+                </div>
+              </div>
+
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6">
+                <h4 className="text-red-400 font-semibold mb-2">Attention :</h4>
+                <div className="text-gray-300 text-sm space-y-1">
+                  <div>• Vous allez supprimer <strong>{selectedProducts.size}</strong> produits</div>
+                  <div>• Cette action est définitive et irréversible</div>
+                  <div>• Les ventes associées à ces produits resteront dans l'historique mais seront orphelines</div>
+                  <div>• Les statistiques, rapports et analyses seront impactés</div>
+                  <div className="mt-2 pt-2 border-t border-red-500/20 text-red-300 font-medium">
+                    Êtes-vous absolument sûr de vouloir supprimer ces produits ?
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={confirmMultiDelete}
+                  disabled={isMultiDeleting}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white font-semibold 
+                             py-3 px-4 rounded-xl hover:from-red-600 hover:to-red-700 
+                             disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200 flex items-center justify-center space-x-2"
+                >
+                  {isMultiDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Suppression...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Confirmer la suppression</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => setShowMultiDeleteConfirm(false)}
+                  disabled={isMultiDeleting}
+                  className="px-6 py-3 bg-gray-600 text-white font-semibold rounded-xl 
+                             hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed
+                             transition-all duration-200"
+                >
+                  Annuler
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Product Edit Modal */}
       {showEditModal && editingProduct && (
