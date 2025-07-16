@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { format } from 'date-fns';
+import { format, parseISO, isValid } from 'date-fns';
 import { 
   X, 
   Save,
@@ -55,6 +55,7 @@ export function ProductEditModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Reset form when product changes
   useEffect(() => {
@@ -83,6 +84,13 @@ export function ProductEditModal({
     setErrors({});
     setWarnings([]);
   }, [product, isOpen]);
+
+  // Validate the date format
+  const validateDate = (dateString: string): boolean => {
+    if (!dateString) return false;
+    const date = parseISO(dateString);
+    return isValid(date);
+  };
   
   // Clear success message after 3 seconds
   useEffect(() => {
@@ -93,6 +101,16 @@ export function ProductEditModal({
       return () => clearTimeout(timer);
     }
   }, [saveSuccess]);
+
+  // Clear error message after 5 seconds
+  useEffect(() => {
+    if (saveError) {
+      const timer = setTimeout(() => {
+        setSaveError(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [saveError]);
 
   // Validate stock configuration when relevant fields change
   useEffect(() => {
@@ -129,6 +147,11 @@ export function ProductEditModal({
       newErrors.initialStock = 'Le stock initial doit être un nombre positif';
     }
 
+    // Validate date format
+    if (!validateDate(formData.initialStockDate)) {
+      newErrors.initialStockDate = 'Format de date invalide (utilisez YYYY-MM-DD)';
+    }
+
     const minStock = parseInt(formData.minStock);
     if (isNaN(minStock) || minStock < 0) {
       newErrors.minStock = 'Le stock minimum doit être un nombre positif';
@@ -146,6 +169,7 @@ export function ProductEditModal({
     if (!validateForm()) return;
 
     // Clear the product sales cache to ensure fresh calculations
+    setSaveError(null);
     clearProductSalesCache();
     
     try {
@@ -155,6 +179,7 @@ export function ProductEditModal({
         minStock: parseInt(formData.minStock),
         isConfigured: true // Mark as configured when saved
       };
+      console.log('🔄 Saving product data:', productData);
       
       const success = await onSave(productData);
       if (success) {
@@ -165,7 +190,8 @@ export function ProductEditModal({
         }, 3000);
       }
     } catch (error) {
-      console.error('Error saving product:', error);
+      console.error('Error saving product:', error.message);
+      setSaveError(`Erreur lors de la sauvegarde: ${error.message}`);
     }
   };
 
@@ -174,10 +200,11 @@ export function ProductEditModal({
     
     setIsDeleting(true);
     try {
+      console.log('🗑️ Deleting product:', product.id);
       await onDeleteProduct(product.id);
       onClose();
     } catch (error) {
-      console.error('Error deleting product:', error);
+      console.error('Error deleting product:', error.message);
     } finally {
       setIsDeleting(false);
     }
@@ -256,7 +283,8 @@ export function ProductEditModal({
               <div>
                 <h5 className="text-blue-400 font-semibold">Gestion du Stock Initial</h5>
                 <p className="text-gray-300 text-sm mt-1">
-                  La <strong>date d'effet</strong> détermine à partir de quand les ventes affectent le stock. 
+                  La <strong>date d'effet</strong> détermine à partir de quand les ventes affectent le stock.
+                  <br />
                   Les ventes antérieures à cette date seront ignorées dans le calcul du stock final.
                 </p>
               </div>
@@ -426,7 +454,7 @@ export function ProductEditModal({
                   <label className="block text-sm font-medium text-gray-400 mb-2">
                     <Calendar className="w-4 h-4 inline mr-2" />
                     Date d'Effet du Stock
-                    <span className="text-xs text-gray-500 ml-2">(Les ventes antérieures à cette date seront ignorées)</span>
+                    <span className="text-xs text-blue-400 ml-2">(Format: YYYY-MM-DD)</span>
                   </label>
                   <input
                     type="date"
@@ -442,8 +470,9 @@ export function ProductEditModal({
                   {errors.initialStockDate && (
                     <p className="text-red-400 text-sm mt-1">{errors.initialStockDate}</p>
                   )}
-                  <p className="text-gray-500 text-xs mt-1 space-y-1">
-                    <span className="block">Les ventes à partir de cette date seront déduites du stock initial pour calculer le stock actuel.</span>
+                  <p className="text-gray-500 text-xs mt-1 space-y-1 bg-gray-700/30 p-2 rounded-lg">
+                    <span className="block">Les ventes <strong>à partir</strong> de cette date seront déduites du stock initial.</span>
+                    <span className="block">Les ventes <strong>avant</strong> cette date seront ignorées dans le calcul.</span>
                     <span className="block text-blue-400">
                       Si vous choisissez une date passée, les ventes depuis cette date seront automatiquement déduites.
                     </span>
@@ -619,6 +648,21 @@ export function ProductEditModal({
             </motion.div>
           </motion.div>
         )}
+
+        {/* Error Message */}
+        <AnimatePresence>
+          {saveError && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-6 flex items-center space-x-3"
+            >
+              <AlertTriangle className="w-5 h-5 text-red-400" />
+              <span className="text-red-400">{saveError}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </AnimatePresence>
     </AnimatePresence>
   );

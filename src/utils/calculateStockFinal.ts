@@ -271,3 +271,67 @@ export function clearProductSalesCache(): void {
   console.log('🧹 Clearing product sales cache');
   productSalesCache.clear();
 }
+
+/**
+ * Debug function to log stock calculation details
+ */
+export function debugStockCalculation(product: Product, allSales: RegisterSale[]): void {
+  console.log('🔍 DEBUG: Stock Calculation for', product.name);
+  console.log('📦 Product details:', {
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    initialStock: product.initialStock,
+    initialStockDate: product.initialStockDate,
+    currentStock: product.stock
+  });
+  
+  // Find all sales for this product
+  const productSales = findProductSales(product, allSales, false);
+  console.log(`📊 Found ${productSales.length} sales for this product`);
+  
+  if (!product.initialStockDate) {
+    console.log('⚠️ No initial stock date set - using all sales');
+    const totalSold = productSales.reduce((sum, sale) => sum + sale.quantity, 0);
+    console.log(`📉 Total sold (all sales): ${totalSold}`);
+    console.log(`🧮 Final stock calculation: ${product.initialStock || 0} - ${totalSold} = ${Math.max(0, (product.initialStock || 0) - totalSold)}`);
+    return;
+  }
+  
+  // Parse the initial stock date
+  const stockDate = parseISO(product.initialStockDate);
+  if (!isValid(stockDate)) {
+    console.log('⚠️ Invalid initial stock date:', product.initialStockDate);
+    return;
+  }
+  
+  const stockDateStart = startOfDay(stockDate);
+  console.log(`📅 Effective date (start of day): ${stockDateStart.toISOString()}`);
+  
+  // Log all sales with their dates for comparison
+  productSales.forEach((sale, index) => {
+    const saleDate = sale.date;
+    const isAfterStockDate = isAfter(saleDate, stockDateStart) || saleDate.getTime() === stockDateStart.getTime();
+    console.log(`${index + 1}. Sale date: ${saleDate.toISOString()}, Quantity: ${sale.quantity}, Included: ${isAfterStockDate ? 'Yes' : 'No'}`);
+  });
+  
+  // Separate sales before and after the stock date
+  const salesBeforeStockDate = productSales.filter(sale => isBefore(sale.date, stockDateStart));
+  const salesAfterStockDate = productSales.filter(sale => 
+    isAfter(sale.date, stockDateStart) || sale.date.getTime() === stockDateStart.getTime()
+  );
+  
+  console.log(`📊 Sales before effective date: ${salesBeforeStockDate.length}`);
+  console.log(`📊 Sales after effective date: ${salesAfterStockDate.length}`);
+  
+  // Calculate quantities
+  const ignoredQuantity = salesBeforeStockDate.reduce((sum, sale) => sum + sale.quantity, 0);
+  const validSoldQuantity = salesAfterStockDate.reduce((sum, sale) => sum + sale.quantity, 0);
+  
+  console.log(`📉 Ignored quantity (before effective date): ${ignoredQuantity}`);
+  console.log(`📉 Valid sold quantity (after effective date): ${validSoldQuantity}`);
+  
+  // Final calculation
+  const finalStock = Math.max(0, (product.initialStock || 0) - validSoldQuantity);
+  console.log(`🧮 Final stock calculation: ${product.initialStock || 0} - ${validSoldQuantity} = ${finalStock}`);
+}
