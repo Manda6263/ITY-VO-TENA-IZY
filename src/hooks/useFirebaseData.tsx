@@ -262,6 +262,8 @@ export function useFirebaseData() {
       revenue: number;
     }>();
     
+    console.log(`🔍 Extracting products from ${sales.length} sales records...`);
+    
     sales.forEach(sale => {
       const key = `${sale.product}-${sale.category}`;
       
@@ -303,12 +305,12 @@ export function useFirebaseData() {
           category: sale.category,
           price: sale.price,
           quantitySold: 0, // Will be updated later
-          initialStock: 0, // Will be updated later
+          initialStock: 0, // Default to 0 for new products
           stock: 0, // Will be calculated later
           minStock: 5,
           stockValue: 0, // Will be calculated later
           lastSale: null, // Will be updated later
-          isConfigured: false,
+          isConfigured: false, // Mark as not configured by default
           initialStockDate: format(new Date(), 'yyyy-MM-dd')
         };
         productMap.set(key, newProduct);
@@ -317,6 +319,7 @@ export function useFirebaseData() {
     
     // Update stock values based on total sold
     const products = Array.from(productMap.values());
+    console.log(`📦 Extracted ${products.length} unique products from sales`);
     
     // Update products with sales data
     return products.map(product => {
@@ -530,6 +533,7 @@ export function useFirebaseData() {
   // Auto sync products from sales
   const autoSyncProductsFromSales = async (): Promise<boolean> => {
     try {
+      console.log('🔄 Starting auto sync of products from sales...');
       const sales = await loadRegisterSales();
       
       // Get existing products first
@@ -539,12 +543,17 @@ export function useFirebaseData() {
         const key = `${product.name}-${product.category}`;
         existingProductMap.set(key, product);
       });
+      console.log(`📊 Found ${existingProducts.length} existing products`);
       
       // Extract products from sales
       const extractedProducts = extractProductsFromSales(sales);
+      console.log(`🔍 Extracted ${extractedProducts.length} products from sales`);
       
       // Prepare batch update
       const batch = writeBatch(db);
+      
+      let updatedCount = 0;
+      let newCount = 0;
       
       // Process each extracted product
       extractedProducts.forEach(extractedProduct => {
@@ -567,15 +576,29 @@ export function useFirebaseData() {
           };
           
           batch.update(docRef, updates);
+          updatedCount++;
         } else {
           // Create new product
           const docRef = doc(collection(db, 'products'));
-          batch.set(docRef, {
+          
+          // For new products, set stock to 0 by default
+          const newProduct = {
             ...extractedProduct,
-            id: docRef.id // Use Firestore generated ID
+            id: docRef.id, // Use Firestore generated ID
+            stock: 0, // Default to 0 stock for new products
+            initialStock: 0,
+            stockValue: 0,
+            isConfigured: false // Mark as not configured
+          };
+          
+          batch.set(docRef, {
+            ...newProduct
           });
+          newCount++;
         }
       });
+      
+      console.log(`🔄 Updating ${updatedCount} existing products and creating ${newCount} new products`);
       
       // Commit all changes
       await batch.commit();
@@ -587,9 +610,10 @@ export function useFirebaseData() {
       const stats = calculateDashboardStats(updatedSales, updatedProducts);
       setDashboardStats(stats);
       
+      console.log('✅ Auto sync completed successfully');
       return true;
     } catch (error) {
-      console.error('Error syncing products from sales:', error);
+      console.error('❌ Error syncing products from sales:', error);
       return false;
     }
   };
@@ -597,54 +621,83 @@ export function useFirebaseData() {
   // Update stock configuration
   const updateStockConfig = async (productId: string, config: { initialStock: number, initialStockDate: string, minStock: number }) => {
     try {
-      console.log('Updating stock configuration with effective date:', productId, config);
+      console.log('🔄 Updating stock configuration with effective date:', productId, config);
       // Get the product document
       const productRef = doc(db, 'products', productId);
       const productDoc = await getDoc(productRef);
       
       if (productDoc.exists()) {
         const productData = productDoc.data() as Product;
+        console.log('📦 Current product data:', productData);
         
-        // Get all sales for this product AFTER the effective date to calculate accurate stock
+        // Get all sales for this product to calculate accurate stock
         const salesQuery = query(
           collection(db, 'register_sales'),
           where('product', '==', productData.name),
-          where('category', '==', productData.category),
-          where('date', '>=', new Date(config.initialStockDate))
+          where('category', '==', productData.category)
         );
         const salesSnapshot = await getDocs(salesQuery);
+        console.log(`📊 Found ${salesSnapshot.docs.length} sales for this product`);
         
-        // Calculate total quantity sold
+        // Filter sales after the effective date
+        const effectiveDate = new Date(config.initialStockDate);
+        console.log(`📅 Effective date for stock calculation: ${effectiveDate.toISOString()}`);
+        
+        // Convert to start of day to ensure consistent comparison
+        const effectiveDateStart = new Date(effectiveDate);
+        effectiveDateStart.setHours(0, 0, 0, 0);
+        
         let quantitySold = 0;
-        salesSnapshot.docs.forEach(doc => {
+        let salesAfterEffectiveDate = 0;
+        
+        salesSnapshot.docs.forEach((doc) => {
           const saleData = doc.data();
-          quantitySold += saleData.quantity || 0;
+          // Convert sale date string to Date object
+          let saleDate: Date;
+          if (typeof saleData.date === 'string') {
+            saleDate = new Date(saleData.date);
+          } else if (saleData.date && typeof saleData.date.toDate === 'function') {
+            // Handle Firestore Timestamp
+            saleDate = saleData.date.toDate();
+          } else {
+            // Fallback
+            saleDate = new Date(0); // Unix epoch
+          }
+          
+          // Only count sales after the effective date
+          if (saleDate >= effectiveDateStart) {
+            const quantity = saleData.quantity || 0;
+            quantitySold += quantity;
+            salesAfterEffectiveDate++;
+            console.log(`📝 Including sale from ${saleDate.toISOString()} with quantity ${quantity}`);
+          } else {
+            console.log(`⏭️ Skipping sale from ${saleDate.toISOString()} (before effective date)`);
+          }
         });
+        
+        console.log(`🧮 Total quantity sold after ${effectiveDateStart.toISOString()}: ${quantitySold} (from ${salesAfterEffectiveDate} sales)`);
         
         // Calculate current stock based on initial stock and sales
         const stock = Math.max(0, config.initialStock - quantitySold);
-        
-        // Update product with new configuration
-        const updatedProduct: Partial<Product> & { updatedAt: string } = {
-          initialStock: config.initialStock,
           initialStockDate: config.initialStockDate,
           minStock: config.minStock,
-          quantitySold,
-          stock,
+          quantitySold: stats.quantitySold,
+          stock: 0, // Default to 0 for new products from sales
           stockValue: Math.round((stock * productData.price) * 100) / 100, // Round to 2 decimal places
           isConfigured: true,
-          updatedAt: new Date().toISOString()
+          stockValue: 0 // Default to 0 for new products from sales
         };
         
+        console.log('✅ Updating product with:', updatedProduct);
         await updateDoc(productRef, updatedProduct);
-        console.log('Stock configuration updated successfully');
+        console.log('✅ Stock configuration updated successfully');
         
         await loadProducts();
         return true;
       }
       return false;
     } catch (error) {
-      console.error('Error updating stock config:', error);
+      console.error('❌ Error updating stock config:', error);
       throw error;
     }
   };
